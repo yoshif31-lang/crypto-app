@@ -3,184 +3,134 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pro Crypto Terminal</title>
+    <title>Ultimate Crypto Terminal</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #000000; color: #ffffff; margin: 0; padding: 5px; font-family: 'Roboto', sans-serif; overflow-x: hidden; }
-        .chart-pane { width: 100%; border: 1px solid #1a1a1a; border-bottom: none; background: #000; }
-        .chart-pane:last-child { border-bottom: 1px solid #1a1a1a; }
-        .indicator-label { position: absolute; left: 8px; top: 4px; z-index: 20; font-size: 11px; font-weight: bold; pointer-events: none; text-shadow: 1px 1px 2px black; }
+        body { background-color: #000000; color: #ffffff; margin: 0; padding: 5px; font-family: monospace; overflow-x: hidden; }
+        .chart-container { position: relative; width: 100%; border: 1px solid #1a1a1a; background: #000; margin-bottom: 2px; }
+        .legend-right { position: absolute; right: 10px; top: 5px; z-index: 50; font-size: 11px; text-align: right; pointer-events: none; }
+        .legend-left { position: absolute; left: 10px; top: 5px; z-index: 50; font-size: 11px; pointer-events: none; }
         button.active { background: #2b3139 !important; color: white !important; }
-        #ma-legend { top: 25px; font-weight: normal; font-family: monospace; }
-        .legend-item { margin-right: 8px; }
+        ::-webkit-scrollbar { display: none; }
     </style>
 </head>
 <body>
-    <div class="flex flex-wrap gap-2 items-center mb-2 px-1">
+    <div class="flex items-center justify-between mb-2 px-1">
         <select id="symbolSelect" class="bg-zinc-900 text-white border border-zinc-700 p-1 rounded text-sm font-bold">
             <option value="BTCUSDT">BTC/USDT</option>
             <option value="SOLUSDT">SOL/USDT</option>
             <option value="MNTUSDT">MNT/USDT</option>
-            <option value="ETHUSDT">ETH/USDT</option>
         </select>
-        <div id="priceDisplay" class="text-xl font-bold text-yellow-500 ml-auto">---</div>
+        <div id="priceDisplay" class="text-xl font-bold text-yellow-500">---</div>
     </div>
 
-    <div class="flex gap-1 mb-2 overflow-x-auto pb-1 no-scrollbar text-[10px]">
+    <div class="flex gap-1 mb-2 overflow-x-auto pb-1 text-[10px]">
         <button onclick="changeInterval('1')" id="btn-1" class="bg-zinc-800 px-3 py-1 rounded text-zinc-400">1m</button>
         <button onclick="changeInterval('15')" id="btn-15" class="bg-zinc-800 px-3 py-1 rounded text-zinc-400 active">15m</button>
-        <button onclick="changeInterval('30')" id="btn-30" class="bg-zinc-800 px-3 py-1 rounded text-zinc-400">30m</button>
         <button onclick="changeInterval('60')" id="btn-60" class="bg-zinc-800 px-3 py-1 rounded text-zinc-400">1h</button>
         <button onclick="changeInterval('240')" id="btn-240" class="bg-zinc-800 px-3 py-1 rounded text-zinc-400">4h</button>
         <button onclick="changeInterval('D')" id="btn-D" class="bg-zinc-800 px-3 py-1 rounded text-zinc-400">1d</button>
     </div>
 
-    <div class="relative">
-        <div id="mainChart" class="chart-pane h-[300px]"></div>
-        <div class="indicator-label text-zinc-300">MA/EMA</div>
-        <div id="ma-legend" class="indicator-label text-xs"></div>
+    <div class="chart-container h-[320px]">
+        <div id="mainChart" class="w-full h-full"></div>
+        <div class="legend-left text-zinc-500">MA/EMA/Price</div>
+        <div id="maLegend" class="legend-right"></div>
     </div>
     
-    <div class="relative">
-        <div id="volumeChart" class="chart-pane h-[80px]"></div>
-        <div class="indicator-label text-teal-400">VOL</div>
-    </div>
-
-    <div class="relative">
-        <div id="rsiChart" class="chart-pane h-[80px]"></div>
-        <div class="indicator-label text-blue-400">RSI(14)</div>
-    </div>
-
-    <div class="relative">
-        <div id="macdChart" class="chart-pane h-[80px]" style="border-bottom: 1px solid #1a1a1a;"></div>
-        <div class="indicator-label text-green-400">MACD(12,26,9)</div>
-    </div>
-
-    <div id="status" class="text-[10px] text-emerald-500 text-center py-1">Real-time Connected</div>
+    <div class="chart-container h-[70px]"><div id="volChart" class="w-full h-full"></div><div class="legend-left text-teal-500">VOL</div></div>
+    <div class="chart-container h-[70px]"><div id="rsiChart" class="w-full h-full"></div><div class="legend-left text-blue-400">RSI(14)</div></div>
+    <div class="chart-container h-[70px]"><div id="macdChart" class="w-full h-full"></div><div class="legend-left text-green-400">MACD(12,26,9)</div></div>
+    <div class="chart-container h-[70px]"><div id="kdjChart" class="w-full h-full"></div><div class="legend-left text-purple-400">KDJ(9,3,3)</div></div>
 
     <script>
-        let currentSymbol = 'SOLUSDT', currentInterval = '15', ws;
-        const charts = {};
-        const series = {};
-        let allData = [];
+        let currentSymbol = 'SOLUSDT', currentInterval = '15', ws, allData = [];
+        const charts = {}, series = {};
 
-        // --- 指標計算関数 ---
-        const calcSMA = (data, p) => data.map((d, i) => {
-            if (i < p - 1) return { time: d.time };
-            const val = data.slice(i - p + 1, i + 1).reduce((s, c) => s + c.close, 0) / p;
-            return { time: d.time, value: val };
-        });
+        const calcSMA = (data, p) => data.map((d, i) => (i < p-1) ? {time: d.time} : {time: d.time, value: data.slice(i-p+1, i+1).reduce((s, c) => s + c.close, 0)/p});
         const calcEMA = (data, p) => {
-            let res = [], k = 2 / (p + 1);
-            for (let i = 0; i < data.length; i++) {
-                if (i < p - 1) { res.push({ time: data[i].time }); continue; }
-                if (i === p - 1) { res.push({ time: data[i].time, value: data.slice(0, p).reduce((s, c) => s + c.close, 0) / p }); continue; }
-                res.push({ time: data[i].time, value: data[i].close * k + res[i-1].value * (1 - k) });
+            let res = [], k = 2/(p+1);
+            for(let i=0; i<data.length; i++){
+                if(i<p-1) res.push({time: data[i].time});
+                else if(i===p-1) res.push({time: data[i].time, value: data.slice(0, p).reduce((s, c) => s + c.close, 0)/p});
+                else res.push({time: data[i].time, value: data[i].close*k + res[i-1].value*(1-k)});
             }
             return res;
         };
-        const calcRSI = (data, p=14) => {
-            let res = [];
-            for (let i = 0; i < data.length; i++) {
-                if (i < p) { res.push({ time: data[i].time }); continue; }
-                let up = 0, down = 0;
-                for (let j = i - p + 1; j <= i; j++) {
-                    let diff = data[j].close - data[j - 1].close;
-                    if (diff > 0) up += diff; else down -= diff;
-                }
-                res.push({ time: data[i].time, value: 100 - (100 / (1 + (up / down || 1))) });
-            }
-            return res;
-        };
-        // 簡易MACD（本来はEMAベースだがここではSMAで代用し表示優先）
-        const calcMACD = (data) => data.map((d,i) => ({ time: d.time, value: 0 })); 
 
-        function createPane(id, options={}) {
+        function createChart(id, hasTime = false) {
             return LightweightCharts.createChart(document.getElementById(id), {
-                layout: { background: { color: '#000000' }, textColor: '#888' },
-                grid: { vertLines: { color: '#111' }, horzLines: { color: '#111' } },
-                timeScale: { visible: id === 'macdChart', borderColor: '#222', timeVisible: true },
-                rightPriceScale: { borderColor: '#222', scaleMargins: options.scaleMargins || { top: 0.1, bottom: 0.1 }, ...options.priceScale },
-                crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-                ...options.chart
+                layout: { background: { color: '#000000' }, textColor: '#71717a', fontSize: 10 },
+                grid: { vertLines: { color: '#000' }, horzLines: { color: '#111' } },
+                timeScale: { visible: hasTime, borderColor: '#222' },
+                rightPriceScale: { borderColor: '#222', scaleMargins: { top: 0.1, bottom: 0.1 } },
+                crosshair: { mode: 0 }
             });
         }
 
         function init() {
-            charts.main = createPane('mainChart', { scaleMargins: { top: 0.1, bottom: 0.2 } });
+            charts.main = createChart('mainChart');
             series.candles = charts.main.addCandlestickSeries({ upColor: '#089981', downColor: '#f23645', wickUpColor: '#089981', wickDownColor: '#f23645' });
-            series.ma20 = charts.main.addLineSeries({ color: '#ff00ff', lineWidth: 1, title: 'MA20' });
-            series.ema50 = charts.main.addLineSeries({ color: '#3b82f6', lineWidth: 1, title: 'EMA50' });
+            series.ma5 = charts.main.addLineSeries({ color: '#ffffff', lineWidth: 1 });
+            series.ma10 = charts.main.addLineSeries({ color: '#f0b90b', lineWidth: 1 });
+            series.ma20 = charts.main.addLineSeries({ color: '#ff00ff', lineWidth: 1 });
+            series.ema50 = charts.main.addLineSeries({ color: '#3b82f6', lineWidth: 1 });
 
-            charts.vol = createPane('volumeChart', { priceScale: { mode: 2 } }); // mode 2 = Percentage for auto-scaling
+            charts.vol = createChart('volChart');
             series.vol = charts.vol.addHistogramSeries({ color: '#26a69a', priceFormat: { type: 'volume' } });
 
-            charts.rsi = createPane('rsiChart');
+            charts.rsi = createChart('rsiChart');
             series.rsi = charts.rsi.addLineSeries({ color: '#3b82f6', lineWidth: 1 });
-            series.rsi.createPriceLine({ price: 70, color: '#ef4444', lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
-            series.rsi.createPriceLine({ price: 30, color: '#22c55e', lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
 
-            charts.macd = createPane('macdChart');
-            series.macdLine = charts.macd.addLineSeries({ color: '#22c55e', lineWidth: 1 });
-            series.macdSig = charts.macd.addLineSeries({ color: '#ef4444', lineWidth: 1 });
-            series.macdHist = charts.macd.addHistogramSeries({ color: '#555' });
+            charts.macd = createChart('macdChart');
+            series.mLine = charts.macd.addLineSeries({ color: '#ffffff', lineWidth: 1 });
+            series.mSig = charts.macd.addLineSeries({ color: '#f0b90b', lineWidth: 1 });
+            series.mHist = charts.macd.addHistogramSeries({ color: '#555' });
 
-            // 全チャートのクロスヘア（カーソル）を同期
-            const allCharts = [charts.main, charts.vol, charts.rsi, charts.macd];
-            allCharts.forEach(c => {
-                c.timeScale().subscribeVisibleTimeRangeChange(range => {
-                    allCharts.filter(other => other !== c).forEach(other => other.timeScale().setVisibleRange(range));
+            charts.kdj = createChart('kdjChart', true);
+            series.k = charts.kdj.addLineSeries({ color: '#ffffff', lineWidth: 1 });
+            series.d = charts.kdj.addLineSeries({ color: '#f0b90b', lineWidth: 1 });
+            series.j = charts.kdj.addLineSeries({ color: '#ff00ff', lineWidth: 1 });
+
+            const sync = [charts.main, charts.vol, charts.rsi, charts.macd, charts.kdj];
+            sync.forEach(c => {
+                c.timeScale().subscribeVisibleTimeRangeChange(r => sync.filter(o => o !== c).forEach(o => o.timeScale().setVisibleRange(r)));
+                c.subscribeCrosshairMove(p => {
+                    sync.filter(o => o !== c).forEach(o => o.setCrosshairPosition(p.paneAndPriceByScaleId, p.time, p.paneAndPriceByScaleId));
+                    if(id === 'mainChart' || p.time) updateLegend(p.time);
                 });
             });
-
-            // MA/EMAの数値を凡例に表示する処理
-            charts.main.subscribeCrosshairMove(param => {
-                const legend = document.getElementById('ma-legend');
-                if (!param.time || param.point.x < 0 || param.point.x > charts.main.timeScale().width() || param.point.y < 0 || param.point.y > charts.main.timeScale().height()) {
-                    // カーソルが外れたら最新の値を表示
-                    updateLegend(allData[allData.length-1]);
-                    return;
-                }
-                // カーソル位置のデータを取得して表示
-                const dataPoint = allData.find(d => d.time === param.time);
-                if(dataPoint) updateLegend(dataPoint);
-            });
-
             load();
         }
 
-        function updateLegend(data) {
-            if(!data || !data.ma20 || !data.ema50) return;
-            const legend = document.getElementById('ma-legend');
-            legend.innerHTML = `
-                <span class="legend-item" style="color: #ff00ff;">MA20: ${data.ma20.toFixed(2)}</span>
-                <span class="legend-item" style="color: #3b82f6;">EMA50: ${data.ema50.toFixed(2)}</span>
+        function updateLegend(time) {
+            const d = time ? allData.find(x => x.time === time) : allData[allData.length-1];
+            if(!d) return;
+            document.getElementById('maLegend').innerHTML = `
+                <div style="color: #ffffff">MA5: ${d.ma5?.toFixed(2) || '--'}</div>
+                <div style="color: #f0b90b">MA10: ${d.ma10?.toFixed(2) || '--'}</div>
+                <div style="color: #ff00ff">MA20: ${d.ma20?.toFixed(2) || '--'}</div>
+                <div style="color: #3b82f6">EMA50: ${d.ema50?.toFixed(2) || '--'}</div>
             `;
         }
 
         async function load() {
             const res = await fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${currentSymbol}&interval=${currentInterval}&limit=200`);
             const json = await res.json();
-            const rawData = json.result.list.map(d => ({
-                time: parseInt(d[0]) / 1000, open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5])
+            const raw = json.result.list.map(d => ({
+                time: parseInt(d[0])/1000, open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5])
             })).reverse();
 
-            const ma20 = calcSMA(rawData, 20);
-            const ema50 = calcEMA(rawData, 50);
-            const rsi = calcRSI(rawData);
+            const ma5 = calcSMA(raw, 5), ma10 = calcSMA(raw, 10), ma20 = calcSMA(raw, 20), ema50 = calcEMA(raw, 50);
+            allData = raw.map((d, i) => ({...d, ma5: ma5[i].value, ma10: ma10[i].value, ma20: ma20[i].value, ema50: ema50[i].value}));
 
-            // 全データを結合して保持
-            allData = rawData.map((d, i) => ({ ...d, ma20: ma20[i]?.value, ema50: ema50[i]?.value }));
-
-            series.candles.setData(rawData);
-            series.ma20.setData(ma20);
-            series.ema50.setData(ema50);
-            series.vol.setData(rawData.map(d => ({ time: d.time, value: d.volume, color: d.close >= d.open ? '#08998155' : '#f2364555' })));
-            series.rsi.setData(rsi);
+            series.candles.setData(raw);
+            series.ma5.setData(ma5); series.ma10.setData(ma10); series.ma20.setData(ma20); series.ema50.setData(ema50);
+            series.vol.setData(raw.map(d => ({time: d.time, value: d.volume, color: d.close >= d.open ? '#08998155' : '#f2364555'})));
             
-            updateLegend(allData[allData.length-1]); // 初期表示は最新の値
-            document.getElementById('priceDisplay').innerText = rawData[rawData.length-1].close.toLocaleString();
+            updateLegend();
+            document.getElementById('priceDisplay').innerText = raw[raw.length-1].close.toLocaleString();
             connect();
         }
 
@@ -192,12 +142,8 @@
                 const msg = JSON.parse(e.data);
                 if (msg.data) {
                     const k = msg.data[0];
-                    const p = parseFloat(k.close);
-                    document.getElementById('priceDisplay').innerText = p.toLocaleString();
-                    const newCandle = { time: k.start/1000, open: parseFloat(k.open), high: parseFloat(k.high), low: parseFloat(k.low), close: p, volume: parseFloat(k.volume) };
-                    series.candles.update(newCandle);
-                    series.vol.update({ time: newCandle.time, value: newCandle.volume, color: newCandle.close >= newCandle.open ? '#08998155' : '#f2364555' });
-                    // ※リアルタイムでのインジケーター再計算は複雑なため割愛し、最新の足の確定を待ちます
+                    document.getElementById('priceDisplay').innerText = parseFloat(k.close).toLocaleString();
+                    series.candles.update({ time: k.start/1000, open: parseFloat(k.open), high: parseFloat(k.high), low: parseFloat(k.low), close: parseFloat(k.close) });
                 }
             };
         }
