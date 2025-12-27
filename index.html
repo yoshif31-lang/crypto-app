@@ -3,70 +3,102 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Crypto App</title>
+    <title>Crypto Pro Dashboard</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body style="background-color: #0b0e11; color: white; margin: 0; padding: 10px; font-family: sans-serif;">
     
-    <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
-        <select id="symbolSelect" style="background: #161a1e; color: white; border: 1px solid #474d57; padding: 10px; border-radius: 5px;">
-            <option value="BTCUSDT">BTC (ビットコイン)</option>
-            <option value="SOLUSDT">SOL (ソラナ)</option>
-            <option value="MNTUSDT">MNT (マントル)</option>
-            <option value="ETHUSDT">ETH (イーサリアム)</option>
+    <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; align-items: center;">
+        <select id="symbolSelect" style="background: #161a1e; color: white; border: 1px solid #474d57; padding: 8px; border-radius: 4px; font-weight: bold;">
+            <option value="BTCUSDT">BTC/USDT</option>
+            <option value="SOLUSDT">SOL/USDT</option>
+            <option value="MNTUSDT">MNT/USDT</option>
+            <option value="ETHUSDT">ETH/USDT</option>
         </select>
-        <div id="priceDisplay" style="font-size: 20px; font-weight: bold; color: #f0b90b;">---</div>
+
+        <div style="display: flex; flex-wrap: wrap; gap: 4px; background: #161a1e; padding: 4px; border-radius: 4px; border: 1px solid #2b3139;">
+            <button onclick="changeInterval('1')" id="btn-1" style="background: transparent; color: #888; border: none; padding: 4px 6px; border-radius: 2px; font-size: 11px; cursor: pointer;">1分</button>
+            <button onclick="changeInterval('15')" id="btn-15" style="background: #2b3139; color: white; border: none; padding: 4px 6px; border-radius: 2px; font-size: 11px; cursor: pointer;">15分</button>
+            <button onclick="changeInterval('30')" id="btn-30" style="background: transparent; color: #888; border: none; padding: 4px 6px; border-radius: 2px; font-size: 11px; cursor: pointer;">30分</button>
+            <button onclick="changeInterval('60')" id="btn-60" style="background: transparent; color: #888; border: none; padding: 4px 6px; border-radius: 2px; font-size: 11px; cursor: pointer;">1時間</button>
+            <button onclick="changeInterval('240')" id="btn-240" style="background: transparent; color: #888; border: none; padding: 4px 6px; border-radius: 2px; font-size: 11px; cursor: pointer;">4時間</button>
+            <button onclick="changeInterval('D')" id="btn-D" style="background: transparent; color: #888; border: none; padding: 4px 6px; border-radius: 2px; font-size: 11px; cursor: pointer;">日足</button>
+        </div>
+
+        <div id="priceDisplay" style="font-size: 22px; font-weight: bold; color: #f0b90b; margin-left: auto;">---</div>
     </div>
 
-    <div id="chartContainer" style="width: 100%; height: 400px; background: #0b0e11; border: 1px solid #2b3139;"></div>
+    <div id="chartContainer" style="width: 100%; height: 400px; background: #0b0e11; border: 1px solid #2b3139; border-radius: 8px;"></div>
 
-    <div id="status" style="margin-top: 10px; font-size: 12px; color: #888; text-align: center;">
-        接続準備中...
+    <div id="status" style="margin-top: 10px; font-size: 12px; color: #089981; text-align: center; font-weight: bold;">
+        Bybit 接続成功
     </div>
 
     <script>
-        // ライブラリが読み込まれるのを待ってから開始
-        window.onload = function() {
+        let chart, candleSeries, currentSymbol = 'BTCUSDT', currentInterval = '15';
+
+        function initChart() {
             const container = document.getElementById('chartContainer');
-            const chart = LightweightCharts.createChart(container, {
+            chart = LightweightCharts.createChart(container, {
                 layout: { backgroundColor: '#0b0e11', textColor: '#d1d4dc' },
                 grid: { vertLines: { color: '#1f2226' }, horzLines: { color: '#1f2226' } },
-                timeScale: { timeVisible: true }
+                timeScale: { timeVisible: true, borderColor: '#474d57' },
+                rightPriceScale: { borderColor: '#474d57' }
             });
-
-            const candleSeries = chart.addCandlestickSeries({
-                upColor: '#089981', downColor: '#f23645',
+            candleSeries = chart.addCandlestickSeries({
+                upColor: '#089981', downColor: '#f23645', borderVisible: false,
                 wickUpColor: '#089981', wickDownColor: '#f23645'
             });
+            window.addEventListener('resize', () => { chart.applyOptions({ width: container.clientWidth }); });
+        }
 
-            let currentSymbol = 'BTCUSDT';
+        async function updateData() {
+            let label = currentInterval;
+            if(currentInterval === '60') label = '1時間';
+            if(currentInterval === '240') label = '4時間';
+            if(currentInterval === 'D') label = '日足';
+            else if(!isNaN(currentInterval)) label = currentInterval + '分';
 
-            async function updateChart() {
-                try {
-                    const res = await fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${currentSymbol}&interval=1&limit=100`);
-                    const json = await res.json();
-                    const data = json.result.list.map(d => ({
-                        time: parseInt(d[0]) / 1000,
-                        open: parseFloat(d[1]), high: parseFloat(d[2]),
-                        low: parseFloat(d[3]), close: parseFloat(d[4])
-                    })).reverse();
+            document.getElementById('status').innerText = `更新中 (${label}足)...`;
+            try {
+                const response = await fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${currentSymbol}&interval=${currentInterval}&limit=100`);
+                const result = await response.json();
+                const processedData = result.result.list.map(d => ({
+                    time: parseInt(d[0]) / 1000,
+                    open: parseFloat(d[1]), high: parseFloat(d[2]),
+                    low: parseFloat(d[3]), close: parseFloat(d[4])
+                })).reverse();
 
-                    candleSeries.setData(data);
-                    document.getElementById('priceDisplay').innerText = "$" + data[data.length-1].close;
-                    document.getElementById('status').innerText = currentSymbol + " リアルタイム接続中";
-                } catch (e) {
-                    document.getElementById('status').innerText = "通信エラー: 翻訳機能をオフにして再読み込みしてください";
-                }
+                candleSeries.setData(processedData);
+                document.getElementById('priceDisplay').innerText = processedData[processedData.length - 1].close.toLocaleString();
+                document.getElementById('status').innerText = `Bybit 接続中 (${label}足を表示)`;
+            } catch (error) {
+                document.getElementById('status').innerText = "通信エラー";
             }
+        }
 
-            document.getElementById('symbolSelect').onchange = (e) => {
-                currentSymbol = e.target.value;
-                updateChart();
-            };
+        function changeInterval(newInterval) {
+            currentInterval = newInterval;
+            const intervals = ['1', '15', '30', '60', '240', 'D'];
+            intervals.forEach(i => {
+                const btn = document.getElementById('btn-' + i);
+                if (btn) {
+                    btn.style.background = (i === newInterval) ? '#2b3139' : 'transparent';
+                    btn.style.color = (i === newInterval) ? 'white' : '#888';
+                }
+            });
+            updateData();
+        }
 
-            updateChart();
-            setInterval(updateChart, 30000); // 30秒ごとに更新
+        document.getElementById('symbolSelect').onchange = (e) => {
+            currentSymbol = e.target.value;
+            updateData();
         };
+
+        initChart();
+        changeInterval('15'); // 初期表示は15分足に設定
+        setInterval(updateData, 30000);
     </script>
 </body>
 </html>
