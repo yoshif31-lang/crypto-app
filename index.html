@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Professional Crypto Dashboard</title>
+    <title>Professional Crypto Dashboard - $ Added</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -25,7 +25,7 @@
         </select>
         <div class="text-right">
             <div id="priceDisplay" class="text-2xl font-bold text-yellow-500">---</div>
-            <div class="text-[10px] text-zinc-500 uppercase">Real-time Price</div>
+            <div class="text-[10px] text-zinc-500 uppercase">Real-time Modern Price</div>
         </div>
     </div>
 
@@ -72,31 +72,30 @@
         }
 
         function init() {
-            // メインチャートの余白を調整して全体が見えるようにする
             charts.main = createChart('mainChart', false, { top: 0.05, bottom: 0.05 });
             series.candles = charts.main.addCandlestickSeries({ upColor: '#089981', downColor: '#f23645', wickUpColor: '#089981', wickDownColor: '#f23645' });
             
-            // MA/EMAの右側ラベルを非表示にする設定 (lastValueVisible: false)
-            series.ma5 = charts.main.addLineSeries({ color: '#ffffff', lineWidth: 1, lastValueVisible: false });
-            series.ma10 = charts.main.addLineSeries({ color: '#f0b90b', lineWidth: 1, lastValueVisible: false });
-            series.ma20 = charts.main.addLineSeries({ color: '#ff00ff', lineWidth: 1, lastValueVisible: false });
-            series.ema50 = charts.main.addLineSeries({ color: '#3b82f6', lineWidth: 1, lastValueVisible: false });
+            const lineOptions = { lineWidth: 1, lastValueVisible: false, priceLineVisible: false };
+            series.ma5 = charts.main.addLineSeries({ color: '#ffffff', ...lineOptions });
+            series.ma10 = charts.main.addLineSeries({ color: '#f0b90b', ...lineOptions });
+            series.ma20 = charts.main.addLineSeries({ color: '#ff00ff', ...lineOptions });
+            series.ema50 = charts.main.addLineSeries({ color: '#3b82f6', ...lineOptions });
 
             charts.vol = createChart('volChart', false, { top: 0.8, bottom: 0 });
-            series.vol = charts.vol.addHistogramSeries({ color: '#26a69a', priceFormat: { type: 'volume' }, lastValueVisible: false });
+            series.vol = charts.vol.addHistogramSeries({ color: '#26a69a', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
 
             charts.rsi = createChart('rsiChart', false, { top: 0.1, bottom: 0.1 });
-            series.rsi = charts.rsi.addLineSeries({ color: '#3b82f6', lineWidth: 1, lastValueVisible: false });
+            series.rsi = charts.rsi.addLineSeries({ color: '#3b82f6', ...lineOptions });
 
             charts.kdj = createChart('kdjChart', false, { top: 0.1, bottom: 0.1 });
-            series.k = charts.kdj.addLineSeries({ color: '#ffffff', lineWidth: 1, lastValueVisible: false });
-            series.d = charts.kdj.addLineSeries({ color: '#f0b90b', lineWidth: 1, lastValueVisible: false });
-            series.j = charts.kdj.addLineSeries({ color: '#ff00ff', lineWidth: 1, lastValueVisible: false });
+            series.k = charts.kdj.addLineSeries({ color: '#ffffff', ...lineOptions });
+            series.d = charts.kdj.addLineSeries({ color: '#f0b90b', ...lineOptions });
+            series.j = charts.kdj.addLineSeries({ color: '#ff00ff', ...lineOptions });
 
             charts.macd = createChart('macdChart', true, { top: 0.1, bottom: 0.1 });
-            series.mLine = charts.macd.addLineSeries({ color: '#ffffff', lineWidth: 1, lastValueVisible: false });
-            series.mSig = charts.macd.addLineSeries({ color: '#f0b90b', lineWidth: 1, lastValueVisible: false });
-            series.mHist = charts.macd.addHistogramSeries({ color: '#555', lastValueVisible: false });
+            series.mLine = charts.macd.addLineSeries({ color: '#ffffff', ...lineOptions });
+            series.mSig = charts.macd.addLineSeries({ color: '#f0b90b', ...lineOptions });
+            series.mHist = charts.macd.addHistogramSeries({ color: '#555', lastValueVisible: false, priceLineVisible: false });
 
             const sync = [charts.main, charts.vol, charts.rsi, charts.kdj, charts.macd];
             sync.forEach(c => {
@@ -139,8 +138,11 @@
             series.ma5.setData(ma5); series.ma10.setData(ma10); series.ma20.setData(ma20); series.ema50.setData(ema50);
             series.vol.setData(raw.map(d => ({time: d.time, value: d.volume, color: d.close >= d.open ? '#08998155' : '#f2364555'})));
             
+            charts.main.timeScale().fitContent();
             updateLegends();
-            document.getElementById('priceDisplay').innerText = raw[raw.length-1].close.toLocaleString();
+            
+            // $マーク付きで価格をセット
+            document.getElementById('priceDisplay').innerText = "$" + raw[raw.length-1].close.toLocaleString();
             connect();
         }
 
@@ -153,7 +155,8 @@
                 if (msg.data) {
                     const k = msg.data[0];
                     const price = parseFloat(k.close).toLocaleString();
-                    document.getElementById('priceDisplay').innerText = price;
+                    // リアルタイム更新時も$マークを付ける
+                    document.getElementById('priceDisplay').innerText = "$" + price;
                     series.candles.update({ time: k.start/1000, open: parseFloat(k.open), high: parseFloat(k.high), low: parseFloat(k.low), close: parseFloat(k.close) });
                 }
             };
@@ -163,6 +166,7 @@
             currentInterval = v;
             document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
             document.getElementById('btn-'+v).classList.add('active');
+            Object.values(series).forEach(s => s.setData([]));
             load();
         }
 
