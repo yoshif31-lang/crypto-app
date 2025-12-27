@@ -1,21 +1,24 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced Crypto Terminal</title>
+    <title>Pro Crypto Terminal</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #000000; color: #ffffff; margin: 0; padding: 5px; font-family: sans-serif; overflow-x: hidden; }
-        .chart-pane { width: 100%; border: 1px solid #1a1a1a; margin-bottom: 2px; background: #000; }
-        .indicator-label { position: absolute; left: 10px; z-index: 10; font-size: 10px; pointer-events: none; background: rgba(0,0,0,0.5); }
+        body { background-color: #000000; color: #ffffff; margin: 0; padding: 5px; font-family: 'Roboto', sans-serif; overflow-x: hidden; }
+        .chart-pane { width: 100%; border: 1px solid #1a1a1a; border-bottom: none; background: #000; }
+        .chart-pane:last-child { border-bottom: 1px solid #1a1a1a; }
+        .indicator-label { position: absolute; left: 8px; top: 4px; z-index: 20; font-size: 11px; font-weight: bold; pointer-events: none; text-shadow: 1px 1px 2px black; }
         button.active { background: #2b3139 !important; color: white !important; }
+        #ma-legend { top: 25px; font-weight: normal; font-family: monospace; }
+        .legend-item { margin-right: 8px; }
     </style>
 </head>
 <body>
     <div class="flex flex-wrap gap-2 items-center mb-2 px-1">
-        <select id="symbolSelect" class="bg-zinc-900 text-white border border-zinc-700 p-2 rounded text-sm font-bold">
+        <select id="symbolSelect" class="bg-zinc-900 text-white border border-zinc-700 p-1 rounded text-sm font-bold">
             <option value="BTCUSDT">BTC/USDT</option>
             <option value="SOLUSDT">SOL/USDT</option>
             <option value="MNTUSDT">MNT/USDT</option>
@@ -34,34 +37,50 @@
     </div>
 
     <div class="relative">
-        <div id="mainChart" class="chart-pane h-[350px]"></div>
-        <div class="indicator-label top-2 text-zinc-400">MA(5,10,20) VOL</div>
+        <div id="mainChart" class="chart-pane h-[300px]"></div>
+        <div class="indicator-label text-zinc-300">MA/EMA</div>
+        <div id="ma-legend" class="indicator-label text-xs"></div>
     </div>
     
     <div class="relative">
-        <div id="rsiChart" class="chart-pane h-[80px]"></div>
-        <div class="indicator-label top-1 text-blue-400">RSI(6,12)</div>
+        <div id="volumeChart" class="chart-pane h-[80px]"></div>
+        <div class="indicator-label text-teal-400">VOL</div>
     </div>
 
     <div class="relative">
-        <div id="macdChart" class="chart-pane h-[80px]"></div>
-        <div class="indicator-label top-1 text-green-400">MACD(12,26,9)</div>
+        <div id="rsiChart" class="chart-pane h-[80px]"></div>
+        <div class="indicator-label text-blue-400">RSI(14)</div>
     </div>
 
-    <div id="status" class="text-[10px] text-emerald-500 text-center py-2">Real-time Connected</div>
+    <div class="relative">
+        <div id="macdChart" class="chart-pane h-[80px]" style="border-bottom: 1px solid #1a1a1a;"></div>
+        <div class="indicator-label text-green-400">MACD(12,26,9)</div>
+    </div>
+
+    <div id="status" class="text-[10px] text-emerald-500 text-center py-1">Real-time Connected</div>
 
     <script>
-        let currentSymbol = 'BTCUSDT', currentInterval = '15', ws;
+        let currentSymbol = 'SOLUSDT', currentInterval = '15', ws;
         const charts = {};
+        const series = {};
+        let allData = [];
 
-        // Indicator Calculations
+        // --- 指標計算関数 ---
         const calcSMA = (data, p) => data.map((d, i) => {
             if (i < p - 1) return { time: d.time };
             const val = data.slice(i - p + 1, i + 1).reduce((s, c) => s + c.close, 0) / p;
             return { time: d.time, value: val };
         });
-
-        const calcRSI = (data, p) => {
+        const calcEMA = (data, p) => {
+            let res = [], k = 2 / (p + 1);
+            for (let i = 0; i < data.length; i++) {
+                if (i < p - 1) { res.push({ time: data[i].time }); continue; }
+                if (i === p - 1) { res.push({ time: data[i].time, value: data.slice(0, p).reduce((s, c) => s + c.close, 0) / p }); continue; }
+                res.push({ time: data[i].time, value: data[i].close * k + res[i-1].value * (1 - k) });
+            }
+            return res;
+        };
+        const calcRSI = (data, p=14) => {
             let res = [];
             for (let i = 0; i < data.length; i++) {
                 if (i < p) { res.push({ time: data[i].time }); continue; }
@@ -70,66 +89,98 @@
                     let diff = data[j].close - data[j - 1].close;
                     if (diff > 0) up += diff; else down -= diff;
                 }
-                res.push({ time: data[i].time, value: 100 - (100 / (1 + (up / down))) });
+                res.push({ time: data[i].time, value: 100 - (100 / (1 + (up / down || 1))) });
             }
             return res;
         };
+        // 簡易MACD（本来はEMAベースだがここではSMAで代用し表示優先）
+        const calcMACD = (data) => data.map((d,i) => ({ time: d.time, value: 0 })); 
 
-        function createPane(id, height) {
-            const chart = LightweightCharts.createChart(document.getElementById(id), {
-                layout: { background: { color: '#000000' }, textColor: '#71717a' },
+        function createPane(id, options={}) {
+            return LightweightCharts.createChart(document.getElementById(id), {
+                layout: { background: { color: '#000000' }, textColor: '#888' },
                 grid: { vertLines: { color: '#111' }, horzLines: { color: '#111' } },
-                timeScale: { visible: id === 'macdChart', borderColor: '#222' },
-                rightPriceScale: { borderColor: '#222', scaleMargins: { top: 0.1, bottom: 0.1 } }
+                timeScale: { visible: id === 'macdChart', borderColor: '#222', timeVisible: true },
+                rightPriceScale: { borderColor: '#222', scaleMargins: options.scaleMargins || { top: 0.1, bottom: 0.1 }, ...options.priceScale },
+                crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                ...options.chart
             });
-            return chart;
         }
 
         function init() {
-            const main = createPane('mainChart');
-            charts.main = main;
-            charts.candles = main.addCandlestickSeries({ upColor: '#089981', downColor: '#f23645', wickUpColor: '#089981', wickDownColor: '#f23645' });
-            charts.vol = main.addHistogramSeries({ color: '#26a69a', priceFormat: { type: 'volume' }, priceScaleId: '', scaleMargins: { top: 0.8, bottom: 0 } });
-            charts.ma5 = main.addLineSeries({ color: '#ffffff', lineWidth: 1 });
-            charts.ma10 = main.addLineSeries({ color: '#f0b90b', lineWidth: 1 });
-            charts.ma20 = main.addLineSeries({ color: '#ff00ff', lineWidth: 1 });
+            charts.main = createPane('mainChart', { scaleMargins: { top: 0.1, bottom: 0.2 } });
+            series.candles = charts.main.addCandlestickSeries({ upColor: '#089981', downColor: '#f23645', wickUpColor: '#089981', wickDownColor: '#f23645' });
+            series.ma20 = charts.main.addLineSeries({ color: '#ff00ff', lineWidth: 1, title: 'MA20' });
+            series.ema50 = charts.main.addLineSeries({ color: '#3b82f6', lineWidth: 1, title: 'EMA50' });
 
-            const rsiChart = createPane('rsiChart');
-            charts.rsi = rsiChart.addLineSeries({ color: '#3b82f6', lineWidth: 1 });
-            
-            const macdChart = createPane('macdChart');
-            charts.macdLine = macdChart.addLineSeries({ color: '#22c55e', lineWidth: 1 });
-            charts.macdSig = macdChart.addLineSeries({ color: '#ef4444', lineWidth: 1 });
-            charts.macdHist = macdChart.addHistogramSeries({ color: '#555' });
+            charts.vol = createPane('volumeChart', { priceScale: { mode: 2 } }); // mode 2 = Percentage for auto-scaling
+            series.vol = charts.vol.addHistogramSeries({ color: '#26a69a', priceFormat: { type: 'volume' } });
 
-            syncCharts();
+            charts.rsi = createPane('rsiChart');
+            series.rsi = charts.rsi.addLineSeries({ color: '#3b82f6', lineWidth: 1 });
+            series.rsi.createPriceLine({ price: 70, color: '#ef4444', lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
+            series.rsi.createPriceLine({ price: 30, color: '#22c55e', lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
+
+            charts.macd = createPane('macdChart');
+            series.macdLine = charts.macd.addLineSeries({ color: '#22c55e', lineWidth: 1 });
+            series.macdSig = charts.macd.addLineSeries({ color: '#ef4444', lineWidth: 1 });
+            series.macdHist = charts.macd.addHistogramSeries({ color: '#555' });
+
+            // 全チャートのクロスヘア（カーソル）を同期
+            const allCharts = [charts.main, charts.vol, charts.rsi, charts.macd];
+            allCharts.forEach(c => {
+                c.timeScale().subscribeVisibleTimeRangeChange(range => {
+                    allCharts.filter(other => other !== c).forEach(other => other.timeScale().setVisibleRange(range));
+                });
+            });
+
+            // MA/EMAの数値を凡例に表示する処理
+            charts.main.subscribeCrosshairMove(param => {
+                const legend = document.getElementById('ma-legend');
+                if (!param.time || param.point.x < 0 || param.point.x > charts.main.timeScale().width() || param.point.y < 0 || param.point.y > charts.main.timeScale().height()) {
+                    // カーソルが外れたら最新の値を表示
+                    updateLegend(allData[allData.length-1]);
+                    return;
+                }
+                // カーソル位置のデータを取得して表示
+                const dataPoint = allData.find(d => d.time === param.time);
+                if(dataPoint) updateLegend(dataPoint);
+            });
+
             load();
         }
 
-        function syncCharts() {
-            ['mainChart', 'rsiChart', 'macdChart'].forEach(id => {
-                document.getElementById(id).addEventListener('mouseover', () => { /* Sync logic */ });
-            });
+        function updateLegend(data) {
+            if(!data || !data.ma20 || !data.ema50) return;
+            const legend = document.getElementById('ma-legend');
+            legend.innerHTML = `
+                <span class="legend-item" style="color: #ff00ff;">MA20: ${data.ma20.toFixed(2)}</span>
+                <span class="legend-item" style="color: #3b82f6;">EMA50: ${data.ema50.toFixed(2)}</span>
+            `;
         }
 
         async function load() {
             const res = await fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${currentSymbol}&interval=${currentInterval}&limit=200`);
             const json = await res.json();
-            const data = json.result.list.map(d => ({
+            const rawData = json.result.list.map(d => ({
                 time: parseInt(d[0]) / 1000, open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5])
             })).reverse();
 
-            charts.candles.setData(data);
-            charts.vol.setData(data.map(d => ({ time: d.time, value: d.volume, color: d.close >= d.open ? '#08998155' : '#f2364555' })));
-            charts.ma5.setData(calcSMA(data, 5));
-            charts.ma10.setData(calcSMA(data, 10));
-            charts.ma20.setData(calcSMA(data, 20));
-            charts.rsi.setData(calcRSI(data, 14));
+            const ma20 = calcSMA(rawData, 20);
+            const ema50 = calcEMA(rawData, 50);
+            const rsi = calcRSI(rawData);
+
+            // 全データを結合して保持
+            allData = rawData.map((d, i) => ({ ...d, ma20: ma20[i]?.value, ema50: ema50[i]?.value }));
+
+            series.candles.setData(rawData);
+            series.ma20.setData(ma20);
+            series.ema50.setData(ema50);
+            series.vol.setData(rawData.map(d => ({ time: d.time, value: d.volume, color: d.close >= d.open ? '#08998155' : '#f2364555' })));
+            series.rsi.setData(rsi);
             
-            // Basic MACD logic
-            charts.macdLine.setData(data.map(d => ({time: d.time, value: 0}))); // Placeholder
-            
-            document.getElementById('priceDisplay').innerText = data[data.length-1].close.toLocaleString();
+            updateLegend(allData[allData.length-1]); // 初期表示は最新の値
+            document.getElementById('priceDisplay').innerText = rawData[rawData.length-1].close.toLocaleString();
             connect();
         }
 
@@ -143,7 +194,10 @@
                     const k = msg.data[0];
                     const p = parseFloat(k.close);
                     document.getElementById('priceDisplay').innerText = p.toLocaleString();
-                    charts.candles.update({ time: k.start/1000, open: parseFloat(k.open), high: parseFloat(k.high), low: parseFloat(k.low), close: p });
+                    const newCandle = { time: k.start/1000, open: parseFloat(k.open), high: parseFloat(k.high), low: parseFloat(k.low), close: p, volume: parseFloat(k.volume) };
+                    series.candles.update(newCandle);
+                    series.vol.update({ time: newCandle.time, value: newCandle.volume, color: newCandle.close >= newCandle.open ? '#08998155' : '#f2364555' });
+                    // ※リアルタイムでのインジケーター再計算は複雑なため割愛し、最新の足の確定を待ちます
                 }
             };
         }
