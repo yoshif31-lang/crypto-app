@@ -7,7 +7,7 @@
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #0b0e11; color: #d1d4dc; font-family: sans-serif; }
+        body { background-color: #0b0e11; color: #d1d4dc; font-family: sans-serif; margin: 0; }
         .bybit-yellow { color: #f0b90b; }
         .bg-bybit-card { background-color: #161a1e; }
         input { background: #2b3139; border: 1px solid #474d57; color: white; padding: 4px 8px; border-radius: 4px; }
@@ -24,38 +24,16 @@
             </select>
             <div id="priceDisplay" class="text-xl font-bold flex items-center ml-2">---</div>
         </div>
-        <div class="flex gap-1 bg-bybit-card p-1 rounded border border-gray-700">
-            <button onclick="changeInterval('1')" class="px-2 py-1 text-xs hover:bg-gray-700 rounded">1m</button>
-            <button onclick="changeInterval('5')" class="px-2 py-1 text-xs hover:bg-gray-700 rounded">5m</button>
-            <button onclick="changeInterval('60')" class="px-2 py-1 text-xs hover:bg-gray-700 rounded">1h</button>
-            <button onclick="changeInterval('D')" class="px-2 py-1 text-xs hover:bg-gray-700 rounded">1d</button>
-        </div>
     </div>
-    <div id="chartContainer" class="w-full h-[400px] mb-4 border border-gray-800 rounded overflow-hidden"></div>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div class="bg-bybit-card p-4 rounded-lg border border-gray-800">
-            <h3 class="text-sm font-bold mb-3 bybit-yellow">利益シミュレーター</h3>
-            <div class="grid grid-cols-2 gap-2 text-xs">
-                <div>買値 (USDT):<br><input type="number" id="calcEntry" class="w-full mt-1" oninput="updateCalc()"></div>
-                <div>目標値 (USDT):<br><input type="number" id="calcTarget" class="w-full mt-1" oninput="updateCalc()"></div>
-                <div class="col-span-2">投資額 (USDT):<br><input type="number" id="calcAmount" class="w-full mt-1" oninput="updateCalc()"></div>
-            </div>
-            <div id="calcResult" class="mt-3 p-2 bg-black rounded text-center font-bold text-green-500">予想利益: -- USDT</div>
-        </div>
-        <div class="bg-bybit-card p-4 rounded-lg border border-gray-800">
-            <h3 class="text-sm font-bold mb-3 bybit-yellow">保有資産 (手動入力)</h3>
-            <div class="flex gap-2 mb-3">
-                <input type="text" id="assetName" placeholder="BTC" class="w-1/3 text-xs">
-                <input type="number" id="assetQty" placeholder="数量" class="w-1/3 text-xs">
-                <button onclick="addAsset()" class="bg-yellow-600 px-3 py-1 rounded text-white text-xs">追加</button>
-            </div>
-            <div id="assetList" class="text-xs space-y-2"></div>
-            <div class="mt-4 border-t border-gray-700 pt-2 font-bold text-right text-sm">総評価額: <span id="totalValue">0</span> USDT</div>
+    <div id="chartContainer" class="w-full h-[400px] mb-4 border border-gray-800 rounded"></div>
+    <div class="bg-bybit-card p-4 rounded-lg border border-gray-800">
+        <h3 class="text-sm font-bold mb-3 bybit-yellow">利益計算</h3>
+        <div id="calcResult" class="p-2 bg-black rounded text-center font-bold text-green-500">
+            Bybitリアルタイム接続中...
         </div>
     </div>
     <script>
-        let chart, candleSeries, currentSymbol = 'BTCUSDT', currentInterval = '1', currentPrice = 0;
-        let assets = JSON.parse(localStorage.getItem('myAssets')) || [];
+        let chart, candleSeries, currentSymbol = 'BTCUSDT', currentPrice = 0;
         function initChart() {
             chart = LightweightCharts.createChart(document.getElementById('chartContainer'), {
                 layout: { backgroundColor: '#0b0e11', textColor: '#d1d4dc' },
@@ -63,10 +41,10 @@
                 timeScale: { borderColor: '#474d57', timeVisible: true },
             });
             candleSeries = chart.addCandlestickSeries({ upColor: '#089981', downColor: '#f23645' });
-            fetchHistory(); startWebsocket(); updatePortfolio();
+            fetchHistory(); startWebsocket();
         }
         async function fetchHistory() {
-            const res = await fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${currentSymbol}&interval=${currentInterval}&limit=100`);
+            const res = await fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${currentSymbol}&interval=1&limit=100`);
             const data = await res.json();
             const klinedata = data.result.list.map(d => ({
                 time: parseInt(d[0]) / 1000, open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4])
@@ -75,33 +53,21 @@
         }
         function startWebsocket() {
             const ws = new WebSocket('wss://stream.bybit.com/v5/public/linear');
-            ws.onopen = () => ws.send(JSON.stringify({ op: "subscribe", args: [`kline.${currentInterval}.${currentSymbol}`] }));
+            ws.onopen = () => ws.send(JSON.stringify({ op: "subscribe", args: [`kline.1.${currentSymbol}`] }));
             ws.onmessage = (e) => {
                 const msg = JSON.parse(e.data);
                 if (msg.data) {
-                    const k = msg.data[0]; currentPrice = parseFloat(k.close);
+                    const k = msg.data[0];
+                    currentPrice = parseFloat(k.close);
                     document.getElementById('priceDisplay').innerText = currentPrice.toLocaleString();
                     candleSeries.update({ time: k.start / 1000, open: parseFloat(k.open), high: parseFloat(k.high), low: parseFloat(k.low), close: parseFloat(k.close) });
                 }
             };
         }
-        function addAsset() {
-            const name = document.getElementById('assetName').value.toUpperCase();
-            const qty = parseFloat(document.getElementById('assetQty').value);
-            if (name && qty) { assets.push({ name, qty }); localStorage.setItem('myAssets', JSON.stringify(assets)); updatePortfolio(); }
-        }
-        function updatePortfolio() {
-            const list = document.getElementById('assetList'); list.innerHTML = ''; let total = 0;
-            assets.forEach(a => { list.innerHTML += `<div class="flex justify-between"><span>${a.name}: ${a.qty}</span></div>`; });
-        }
-        function updateCalc() {
-            const entry = parseFloat(document.getElementById('calcEntry').value), target = parseFloat(document.getElementById('calcTarget').value), amount = parseFloat(document.getElementById('calcAmount').value);
-            if (entry && target && amount) {
-                const profit = (target - entry) / entry * amount;
-                document.getElementById('calcResult').innerText = `予想利益: ${profit.toFixed(2)} USDT`;
-            }
-        }
-        document.getElementById('symbolSelect').onchange = (e) => { currentSymbol = e.target.value; fetchHistory(); };
+        document.getElementById('symbolSelect').onchange = (e) => {
+            currentSymbol = e.target.value;
+            fetchHistory();
+        };
         initChart();
     </script>
 </body>
