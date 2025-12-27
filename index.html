@@ -3,55 +3,70 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crypto App Test</title>
-    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <title>My Crypto App</title>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
 </head>
-<body style="background-color: #0b0e11; color: white; padding: 15px; font-family: sans-serif;">
-    <h2 style="color: #f0b90b;">接続診断モード</h2>
-    <div id="price" style="font-size: 24px; margin-bottom: 10px;">価格: 読み込み中...</div>
-    <div id="chartContainer" style="width: 100%; height: 300px; border: 1px solid #444;"></div>
-    <div id="log" style="margin-top: 20px; font-size: 12px; color: #ffaa00; background: #222; padding: 10px; border-radius: 5px;">
-        ログ: 準備中...
+<body style="background-color: #0b0e11; color: white; margin: 0; padding: 10px; font-family: sans-serif;">
+    
+    <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
+        <select id="symbolSelect" style="background: #161a1e; color: white; border: 1px solid #474d57; padding: 10px; border-radius: 5px;">
+            <option value="BTCUSDT">BTC (ビットコイン)</option>
+            <option value="SOLUSDT">SOL (ソラナ)</option>
+            <option value="MNTUSDT">MNT (マントル)</option>
+            <option value="ETHUSDT">ETH (イーサリアム)</option>
+        </select>
+        <div id="priceDisplay" style="font-size: 20px; font-weight: bold; color: #f0b90b;">---</div>
+    </div>
+
+    <div id="chartContainer" style="width: 100%; height: 400px; background: #0b0e11; border: 1px solid #2b3139;"></div>
+
+    <div id="status" style="margin-top: 10px; font-size: 12px; color: #888; text-align: center;">
+        接続準備中...
     </div>
 
     <script>
-        const log = (msg) => { document.getElementById('log').innerText += "\n> " + msg; };
-        
-        async function startApp() {
-            log("プログラム開始");
-            try {
-                const url = "https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&interval=1&limit=50";
-                log("データ取得開始...");
-                
-                const res = await fetch(url);
-                if (!res.ok) throw new Error("通信失敗 (Status: " + res.status + ")");
-                
-                const json = await res.json();
-                log("データ受信成功！");
-                
-                const container = document.getElementById('chartContainer');
-                const chart = LightweightCharts.createChart(container, {
-                    layout: { backgroundColor: '#0b0e11', textColor: '#d1d4dc' },
-                    timeScale: { timeVisible: true }
-                });
-                const candleSeries = chart.addCandlestickSeries();
-                
-                const data = json.result.list.map(d => ({
-                    time: parseInt(d[0]) / 1000,
-                    open: parseFloat(d[1]), high: parseFloat(d[2]),
-                    low: parseFloat(d[3]), close: parseFloat(d[4])
-                })).reverse();
-                
-                candleSeries.setData(data);
-                document.getElementById('price').innerText = "BTC: $" + data[data.length-1].close;
-                log("チャート表示完了！");
-                
-            } catch (e) {
-                log("エラー発生: " + e.message);
-                log("ヒント: ブラウザの翻訳機能をオフにして試してください");
+        // ライブラリが読み込まれるのを待ってから開始
+        window.onload = function() {
+            const container = document.getElementById('chartContainer');
+            const chart = LightweightCharts.createChart(container, {
+                layout: { backgroundColor: '#0b0e11', textColor: '#d1d4dc' },
+                grid: { vertLines: { color: '#1f2226' }, horzLines: { color: '#1f2226' } },
+                timeScale: { timeVisible: true }
+            });
+
+            const candleSeries = chart.addCandlestickSeries({
+                upColor: '#089981', downColor: '#f23645',
+                wickUpColor: '#089981', wickDownColor: '#f23645'
+            });
+
+            let currentSymbol = 'BTCUSDT';
+
+            async function updateChart() {
+                try {
+                    const res = await fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${currentSymbol}&interval=1&limit=100`);
+                    const json = await res.json();
+                    const data = json.result.list.map(d => ({
+                        time: parseInt(d[0]) / 1000,
+                        open: parseFloat(d[1]), high: parseFloat(d[2]),
+                        low: parseFloat(d[3]), close: parseFloat(d[4])
+                    })).reverse();
+
+                    candleSeries.setData(data);
+                    document.getElementById('priceDisplay').innerText = "$" + data[data.length-1].close;
+                    document.getElementById('status').innerText = currentSymbol + " リアルタイム接続中";
+                } catch (e) {
+                    document.getElementById('status').innerText = "通信エラー: 翻訳機能をオフにして再読み込みしてください";
+                }
             }
-        }
-        startApp();
+
+            document.getElementById('symbolSelect').onchange = (e) => {
+                currentSymbol = e.target.value;
+                updateChart();
+            };
+
+            updateChart();
+            setInterval(updateChart, 30000); // 30秒ごとに更新
+        };
     </script>
 </body>
 </html>
