@@ -9,9 +9,7 @@
     <style>
         body { background-color: #000000; color: #ffffff; margin: 0; padding: 5px; font-family: sans-serif; overflow-x: hidden; }
         .chart-container { position: relative; width: 100%; border: 1px solid #1a1a1a; background: #000; margin-bottom: 2px; }
-        /* 現代価格を表示するヘッダー */
         .price-header { display: flex; justify-content: space-between; align-items: center; padding: 10px; background: #0b0e11; border-radius: 8px; margin-bottom: 8px; border: 1px solid #2b3139; }
-        /* 各テクニカル数値を表示する凡例（チャート内） */
         .legend-bar { position: absolute; left: 8px; top: 4px; z-index: 50; font-size: 10px; display: flex; flex-wrap: wrap; gap: 8px; pointer-events: none; white-space: nowrap; font-family: monospace; background: rgba(0,0,0,0.4); padding: 2px 4px; border-radius: 2px; }
         button.active { background: #2b3139 !important; color: white !important; border: 1px solid #474d57 !important; }
         ::-webkit-scrollbar { display: none; }
@@ -20,14 +18,14 @@
 <body>
     <div class="price-header">
         <select id="symbolSelect" class="bg-zinc-900 text-white border border-zinc-700 p-2 rounded text-sm font-bold outline-none">
-            <option value="SOLUSDT">SOL/USDT</option>
             <option value="BTCUSDT">BTC/USDT</option>
             <option value="ETHUSDT">ETH/USDT</option>
+            <option value="SOLUSDT">SOL/USDT</option>
             <option value="MNTUSDT">MNT/USDT</option>
         </select>
         <div class="text-right">
             <div id="priceDisplay" class="text-2xl font-bold text-yellow-500">---</div>
-            <div class="text-[10px] text-zinc-500 uppercase">Real-time Modern Price</div>
+            <div class="text-[10px] text-zinc-500 uppercase">Real-time Price</div>
         </div>
     </div>
 
@@ -49,7 +47,7 @@
     <div class="chart-container h-[65px]"><div id="macdChart" class="w-full h-full"></div><div id="macdLegend" class="legend-bar"></div></div>
 
     <script>
-        let currentSymbol = 'SOLUSDT', currentInterval = '15', ws, allData = [];
+        let currentSymbol = 'BTCUSDT', currentInterval = '15', ws, allData = [];
         const charts = {}, series = {};
 
         const calcSMA = (data, p) => data.map((d, i) => (i < p-1) ? {time: d.time} : {time: d.time, value: data.slice(i-p+1, i+1).reduce((s, c) => s + c.close, 0)/p});
@@ -63,39 +61,42 @@
             return res;
         };
 
-        function createChart(id, hasTime = false) {
+        function createChart(id, hasTime = false, scaleMargins = { top: 0.1, bottom: 0.1 }) {
             return LightweightCharts.createChart(document.getElementById(id), {
                 layout: { background: { color: '#000000' }, textColor: '#71717a', fontSize: 10 },
                 grid: { vertLines: { color: '#000' }, horzLines: { color: '#111' } },
                 timeScale: { visible: hasTime, borderColor: '#222' },
-                rightPriceScale: { borderColor: '#222', scaleMargins: { top: 0.2, bottom: 0.1 } },
+                rightPriceScale: { borderColor: '#222', autoScale: true, scaleMargins: scaleMargins },
                 crosshair: { mode: 0 }
             });
         }
 
         function init() {
-            charts.main = createChart('mainChart');
+            // メインチャートの余白を調整して全体が見えるようにする
+            charts.main = createChart('mainChart', false, { top: 0.05, bottom: 0.05 });
             series.candles = charts.main.addCandlestickSeries({ upColor: '#089981', downColor: '#f23645', wickUpColor: '#089981', wickDownColor: '#f23645' });
-            series.ma5 = charts.main.addLineSeries({ color: '#ffffff', lineWidth: 1 });
-            series.ma10 = charts.main.addLineSeries({ color: '#f0b90b', lineWidth: 1 });
-            series.ma20 = charts.main.addLineSeries({ color: '#ff00ff', lineWidth: 1 });
-            series.ema50 = charts.main.addLineSeries({ color: '#3b82f6', lineWidth: 1 });
+            
+            // MA/EMAの右側ラベルを非表示にする設定 (lastValueVisible: false)
+            series.ma5 = charts.main.addLineSeries({ color: '#ffffff', lineWidth: 1, lastValueVisible: false });
+            series.ma10 = charts.main.addLineSeries({ color: '#f0b90b', lineWidth: 1, lastValueVisible: false });
+            series.ma20 = charts.main.addLineSeries({ color: '#ff00ff', lineWidth: 1, lastValueVisible: false });
+            series.ema50 = charts.main.addLineSeries({ color: '#3b82f6', lineWidth: 1, lastValueVisible: false });
 
-            charts.vol = createChart('volChart');
-            series.vol = charts.vol.addHistogramSeries({ color: '#26a69a', priceFormat: { type: 'volume' } });
+            charts.vol = createChart('volChart', false, { top: 0.8, bottom: 0 });
+            series.vol = charts.vol.addHistogramSeries({ color: '#26a69a', priceFormat: { type: 'volume' }, lastValueVisible: false });
 
-            charts.rsi = createChart('rsiChart');
-            series.rsi = charts.rsi.addLineSeries({ color: '#3b82f6', lineWidth: 1 });
+            charts.rsi = createChart('rsiChart', false, { top: 0.1, bottom: 0.1 });
+            series.rsi = charts.rsi.addLineSeries({ color: '#3b82f6', lineWidth: 1, lastValueVisible: false });
 
-            charts.kdj = createChart('kdjChart');
-            series.k = charts.kdj.addLineSeries({ color: '#ffffff', lineWidth: 1 });
-            series.d = charts.kdj.addLineSeries({ color: '#f0b90b', lineWidth: 1 });
-            series.j = charts.kdj.addLineSeries({ color: '#ff00ff', lineWidth: 1 });
+            charts.kdj = createChart('kdjChart', false, { top: 0.1, bottom: 0.1 });
+            series.k = charts.kdj.addLineSeries({ color: '#ffffff', lineWidth: 1, lastValueVisible: false });
+            series.d = charts.kdj.addLineSeries({ color: '#f0b90b', lineWidth: 1, lastValueVisible: false });
+            series.j = charts.kdj.addLineSeries({ color: '#ff00ff', lineWidth: 1, lastValueVisible: false });
 
-            charts.macd = createChart('macdChart', true);
-            series.mLine = charts.macd.addLineSeries({ color: '#ffffff', lineWidth: 1 });
-            series.mSig = charts.macd.addLineSeries({ color: '#f0b90b', lineWidth: 1 });
-            series.mHist = charts.macd.addHistogramSeries({ color: '#555' });
+            charts.macd = createChart('macdChart', true, { top: 0.1, bottom: 0.1 });
+            series.mLine = charts.macd.addLineSeries({ color: '#ffffff', lineWidth: 1, lastValueVisible: false });
+            series.mSig = charts.macd.addLineSeries({ color: '#f0b90b', lineWidth: 1, lastValueVisible: false });
+            series.mHist = charts.macd.addHistogramSeries({ color: '#555', lastValueVisible: false });
 
             const sync = [charts.main, charts.vol, charts.rsi, charts.kdj, charts.macd];
             sync.forEach(c => {
@@ -111,8 +112,6 @@
         function updateLegends(time) {
             const d = time ? allData.find(x => x.time === time) : allData[allData.length-1];
             if(!d) return;
-
-            // テクニカル数値（各数値）の更新
             document.getElementById('maLegend').innerHTML = `
                 <span style="color:#ffffff">MA5:${d.ma5?.toFixed(2)||'--'}</span>
                 <span style="color:#f0b90b">MA10:${d.ma10?.toFixed(2)||'--'}</span>
@@ -121,7 +120,7 @@
             `;
             document.getElementById('volLegend').innerHTML = `<span style="color:#26a69a">VOL:${d.volume?.toFixed(0)||'--'}</span>`;
             document.getElementById('rsiLegend').innerHTML = `<span style="color:#3b82f6">RSI(14):${d.rsi?.toFixed(2)||'--'}</span>`;
-            document.getElementById('kdjLegend').innerHTML = `<span style="color:#ffffff">K:${d.k?.toFixed(2)||'--'}</span> <span style="color:#f0b90b">D:${d.d?.toFixed(2)||'--'}</span>`;
+            document.getElementById('kdjLegend').innerHTML = `<span style="color:#ffffff">K:${d.k?.toFixed(2)||'--'}</span> <span style="color:#f0b90b">D:${d.d?.toFixed(2)||'--'}</span> <span style="color:#ff00ff">J:${d.j?.toFixed(2)||'--'}</span>`;
         }
 
         async function load() {
@@ -133,7 +132,7 @@
 
             const ma5 = calcSMA(raw, 5), ma10 = calcSMA(raw, 10), ma20 = calcSMA(raw, 20), ema50 = calcEMA(raw, 50);
             allData = raw.map((d, i) => ({
-                ...d, ma5: ma5[i].value, ma10: ma10[i].value, ma20: ma20[i].value, ema50: ema50[i].value, rsi: 50, k: 50, d: 50
+                ...d, ma5: ma5[i].value, ma10: ma10[i].value, ma20: ma20[i].value, ema50: ema50[i].value, rsi: 50, k: 50, d: 50, j: 50
             }));
 
             series.candles.setData(raw);
@@ -141,7 +140,6 @@
             series.vol.setData(raw.map(d => ({time: d.time, value: d.volume, color: d.close >= d.open ? '#08998155' : '#f2364555'})));
             
             updateLegends();
-            // 現在価格（最新価格）の更新
             document.getElementById('priceDisplay').innerText = raw[raw.length-1].close.toLocaleString();
             connect();
         }
