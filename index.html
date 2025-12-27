@@ -6,69 +6,78 @@
     <title>Crypto Pro Dashboard</title>
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { background-color: #0b0e11; color: #d1d4dc; font-family: sans-serif; margin: 0; }
-        .bybit-yellow { color: #f0b90b; }
-        .bg-bybit-card { background-color: #161a1e; }
-        input { background: #2b3139; border: 1px solid #474d57; color: white; padding: 4px 8px; border-radius: 4px; }
-    </style>
 </head>
-<body class="p-2">
-    <div class="flex flex-wrap justify-between items-center mb-2 gap-2">
-        <div class="flex gap-2">
-            <select id="symbolSelect" class="bg-bybit-card p-2 rounded text-white font-bold border border-gray-700">
-                <option value="BTCUSDT">BTC/USDT</option>
-                <option value="ETHUSDT">ETH/USDT</option>
-                <option value="SOLUSDT">SOL/USDT</option>
-                <option value="MNTUSDT">MNT/USDT</option>
-            </select>
-            <div id="priceDisplay" class="text-xl font-bold flex items-center ml-2">---</div>
-        </div>
+<body style="background-color: #0b0e11; color: white; margin: 0; padding: 10px;">
+    <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
+        <select id="symbolSelect" style="background: #161a1e; color: white; border: 1px solid #474d57; padding: 8px; border-radius: 4px; font-weight: bold;">
+            <option value="BTCUSDT">BTC/USDT</option>
+            <option value="ETHUSDT">ETH/USDT</option>
+            <option value="SOLUSDT">SOL/USDT</option>
+            <option value="MNTUSDT">MNT/USDT</option>
+        </select>
+        <div id="priceDisplay" style="font-size: 22px; font-weight: bold; color: #f0b90b;">---</div>
     </div>
-    <div id="chartContainer" class="w-full h-[400px] mb-4 border border-gray-800 rounded"></div>
-    <div class="bg-bybit-card p-4 rounded-lg border border-gray-800">
-        <h3 class="text-sm font-bold mb-3 bybit-yellow">利益計算</h3>
-        <div id="calcResult" class="p-2 bg-black rounded text-center font-bold text-green-500">
-            Bybitリアルタイム接続中...
-        </div>
+
+    <div id="chartContainer" style="width: 100%; height: 380px; background: #0b0e11; border: 1px solid #2b3139; border-radius: 8px;"></div>
+
+    <div style="margin-top: 15px; padding: 12px; background: #161a1e; border-radius: 8px; border: 1px solid #2b3139;">
+        <p id="status" style="color: #089981; font-weight: bold; text-align: center; margin: 0;">Bybit 接続待機中...</p>
     </div>
+
     <script>
-        let chart, candleSeries, currentSymbol = 'BTCUSDT', currentPrice = 0;
+        let chart, candleSeries, currentSymbol = 'BTCUSDT';
+
         function initChart() {
-            chart = LightweightCharts.createChart(document.getElementById('chartContainer'), {
+            const container = document.getElementById('chartContainer');
+            chart = LightweightCharts.createChart(container, {
                 layout: { backgroundColor: '#0b0e11', textColor: '#d1d4dc' },
                 grid: { vertLines: { color: '#1f2226' }, horzLines: { color: '#1f2226' } },
-                timeScale: { borderColor: '#474d57', timeVisible: true },
+                timeScale: { timeVisible: true, borderColor: '#474d57' },
+                rightPriceScale: { borderColor: '#474d57' }
             });
-            candleSeries = chart.addCandlestickSeries({ upColor: '#089981', downColor: '#f23645' });
-            fetchHistory(); startWebsocket();
+            candleSeries = chart.addCandlestickSeries({
+                upColor: '#089981', downColor: '#f23645', borderVisible: false,
+                wickUpColor: '#089981', wickDownColor: '#f23645'
+            });
+            
+            // 画面サイズに合わせてチャートを調整
+            window.addEventListener('resize', () => {
+                chart.applyOptions({ width: container.clientWidth });
+            });
         }
-        async function fetchHistory() {
-            const res = await fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${currentSymbol}&interval=1&limit=100`);
-            const data = await res.json();
-            const klinedata = data.result.list.map(d => ({
-                time: parseInt(d[0]) / 1000, open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4])
-            })).reverse();
-            candleSeries.setData(klinedata);
+
+        async function updateData() {
+            document.getElementById('status').innerText = "データ読み込み中...";
+            try {
+                const response = await fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${currentSymbol}&interval=1&limit=100`);
+                const result = await response.json();
+                const rawData = result.result.list;
+                
+                const processedData = rawData.map(d => ({
+                    time: parseInt(d[0]) / 1000,
+                    open: parseFloat(d[1]),
+                    high: parseFloat(d[2]),
+                    low: parseFloat(d[3]),
+                    close: parseFloat(d[4])
+                })).reverse();
+
+                candleSeries.setData(processedData);
+                document.getElementById('priceDisplay').innerText = processedData[processedData.length - 1].close.toLocaleString();
+                document.getElementById('status').innerText = "Bybit 接続成功 (1分足)";
+            } catch (error) {
+                document.getElementById('status').innerText = "接続エラー。再読み込みしてください。";
+            }
         }
-        function startWebsocket() {
-            const ws = new WebSocket('wss://stream.bybit.com/v5/public/linear');
-            ws.onopen = () => ws.send(JSON.stringify({ op: "subscribe", args: [`kline.1.${currentSymbol}`] }));
-            ws.onmessage = (e) => {
-                const msg = JSON.parse(e.data);
-                if (msg.data) {
-                    const k = msg.data[0];
-                    currentPrice = parseFloat(k.close);
-                    document.getElementById('priceDisplay').innerText = currentPrice.toLocaleString();
-                    candleSeries.update({ time: k.start / 1000, open: parseFloat(k.open), high: parseFloat(k.high), low: parseFloat(k.low), close: parseFloat(k.close) });
-                }
-            };
-        }
+
         document.getElementById('symbolSelect').onchange = (e) => {
             currentSymbol = e.target.value;
-            fetchHistory();
+            updateData();
         };
+
         initChart();
+        updateData();
+        // 30秒ごとにデータを更新
+        setInterval(updateData, 30000);
     </script>
 </body>
 </html>
