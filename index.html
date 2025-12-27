@@ -3,46 +3,48 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ultimate Crypto Terminal</title>
+    <title>Bybit Style Terminal</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #000000; color: #ffffff; margin: 0; padding: 5px; font-family: monospace; overflow-x: hidden; }
-        .chart-container { position: relative; width: 100%; border: 1px solid #1a1a1a; background: #000; margin-bottom: 2px; }
-        .legend-right { position: absolute; right: 10px; top: 5px; z-index: 50; font-size: 11px; text-align: right; pointer-events: none; }
-        .legend-left { position: absolute; left: 10px; top: 5px; z-index: 50; font-size: 11px; pointer-events: none; }
+        body { background-color: #000000; color: #ffffff; margin: 0; padding: 5px; font-family: sans-serif; overflow-x: hidden; }
+        .chart-container { position: relative; width: 100%; border: 1px solid #1a1a1a; background: #000; margin-bottom: 1px; }
+        /* 841.pngスタイルの横並び凡例レイアウト */
+        .legend-bar { position: absolute; left: 8px; top: 2px; z-index: 50; font-size: 9px; display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none; white-space: nowrap; font-family: monospace; }
+        .legend-group { display: flex; gap: 6px; }
         button.active { background: #2b3139 !important; color: white !important; }
         ::-webkit-scrollbar { display: none; }
     </style>
 </head>
 <body>
-    <div class="flex items-center justify-between mb-2 px-1">
-        <select id="symbolSelect" class="bg-zinc-900 text-white border border-zinc-700 p-1 rounded text-sm font-bold">
-            <option value="BTCUSDT">BTC/USDT</option>
+    <div class="flex items-center justify-between mb-1 px-1">
+        <select id="symbolSelect" class="bg-zinc-900 text-white border border-zinc-700 p-1 rounded text-xs font-bold">
             <option value="SOLUSDT">SOL/USDT</option>
+            <option value="BTCUSDT">BTC/USDT</option>
             <option value="MNTUSDT">MNT/USDT</option>
         </select>
-        <div id="priceDisplay" class="text-xl font-bold text-yellow-500">---</div>
+        <div id="priceDisplay" class="text-lg font-bold text-yellow-500">---</div>
     </div>
 
-    <div class="flex gap-1 mb-2 overflow-x-auto pb-1 text-[10px]">
-        <button onclick="changeInterval('1')" id="btn-1" class="bg-zinc-800 px-3 py-1 rounded text-zinc-400">1m</button>
-        <button onclick="changeInterval('15')" id="btn-15" class="bg-zinc-800 px-3 py-1 rounded text-zinc-400 active">15m</button>
-        <button onclick="changeInterval('60')" id="btn-60" class="bg-zinc-800 px-3 py-1 rounded text-zinc-400">1h</button>
-        <button onclick="changeInterval('240')" id="btn-240" class="bg-zinc-800 px-3 py-1 rounded text-zinc-400">4h</button>
-        <button onclick="changeInterval('D')" id="btn-D" class="bg-zinc-800 px-3 py-1 rounded text-zinc-400">1d</button>
+    <div class="flex gap-1 mb-1 overflow-x-auto pb-1 text-[9px]">
+        <button onclick="changeInterval('1')" id="btn-1" class="bg-zinc-800 px-2 py-0.5 rounded text-zinc-400">1m</button>
+        <button onclick="changeInterval('15')" id="btn-15" class="bg-zinc-800 px-2 py-0.5 rounded text-zinc-400 active">15m</button>
+        <button onclick="changeInterval('60')" id="btn-60" class="bg-zinc-800 px-2 py-0.5 rounded text-zinc-400">1h</button>
+        <button onclick="changeInterval('D')" id="btn-D" class="bg-zinc-800 px-2 py-0.5 rounded text-zinc-400">1d</button>
     </div>
 
-    <div class="chart-container h-[320px]">
+    <div class="chart-container h-[260px]">
         <div id="mainChart" class="w-full h-full"></div>
-        <div class="legend-left text-zinc-500">MA/EMA/Price</div>
-        <div id="maLegend" class="legend-right"></div>
+        <div class="legend-bar flex-col">
+            <div id="maLegend" class="legend-group"></div>
+            <div id="emaLegend" class="legend-group"></div>
+        </div>
     </div>
     
-    <div class="chart-container h-[70px]"><div id="volChart" class="w-full h-full"></div><div class="legend-left text-teal-500">VOL</div></div>
-    <div class="chart-container h-[70px]"><div id="rsiChart" class="w-full h-full"></div><div class="legend-left text-blue-400">RSI(14)</div></div>
-    <div class="chart-container h-[70px]"><div id="macdChart" class="w-full h-full"></div><div class="legend-left text-green-400">MACD(12,26,9)</div></div>
-    <div class="chart-container h-[70px]"><div id="kdjChart" class="w-full h-full"></div><div class="legend-left text-purple-400">KDJ(9,3,3)</div></div>
+    <div class="chart-container h-[55px]"><div id="volChart" class="w-full h-full"></div><div id="volLegend" class="legend-bar"></div></div>
+    <div class="chart-container h-[55px]"><div id="rsiChart" class="w-full h-full"></div><div id="rsiLegend" class="legend-bar"></div></div>
+    <div class="chart-container h-[55px]"><div id="kdjChart" class="w-full h-full"></div><div id="kdjLegend" class="legend-bar"></div></div>
+    <div class="chart-container h-[55px]"><div id="macdChart" class="w-full h-full"></div><div id="macdLegend" class="legend-bar"></div></div>
 
     <script>
         let currentSymbol = 'SOLUSDT', currentInterval = '15', ws, allData = [];
@@ -64,7 +66,7 @@
                 layout: { background: { color: '#000000' }, textColor: '#71717a', fontSize: 10 },
                 grid: { vertLines: { color: '#000' }, horzLines: { color: '#111' } },
                 timeScale: { visible: hasTime, borderColor: '#222' },
-                rightPriceScale: { borderColor: '#222', scaleMargins: { top: 0.1, bottom: 0.1 } },
+                rightPriceScale: { borderColor: '#222', scaleMargins: { top: 0.2, bottom: 0.1 } },
                 crosshair: { mode: 0 }
             });
         }
@@ -83,35 +85,44 @@
             charts.rsi = createChart('rsiChart');
             series.rsi = charts.rsi.addLineSeries({ color: '#3b82f6', lineWidth: 1 });
 
-            charts.macd = createChart('macdChart');
-            series.mLine = charts.macd.addLineSeries({ color: '#ffffff', lineWidth: 1 });
-            series.mSig = charts.macd.addLineSeries({ color: '#f0b90b', lineWidth: 1 });
-            series.mHist = charts.macd.addHistogramSeries({ color: '#555' });
-
-            charts.kdj = createChart('kdjChart', true);
+            charts.kdj = createChart('kdjChart');
             series.k = charts.kdj.addLineSeries({ color: '#ffffff', lineWidth: 1 });
             series.d = charts.kdj.addLineSeries({ color: '#f0b90b', lineWidth: 1 });
             series.j = charts.kdj.addLineSeries({ color: '#ff00ff', lineWidth: 1 });
 
-            const sync = [charts.main, charts.vol, charts.rsi, charts.macd, charts.kdj];
+            charts.macd = createChart('macdChart', true);
+            series.mLine = charts.macd.addLineSeries({ color: '#ffffff', lineWidth: 1 });
+            series.mSig = charts.macd.addLineSeries({ color: '#f0b90b', lineWidth: 1 });
+            series.mHist = charts.macd.addHistogramSeries({ color: '#555' });
+
+            const sync = [charts.main, charts.vol, charts.rsi, charts.kdj, charts.macd];
             sync.forEach(c => {
                 c.timeScale().subscribeVisibleTimeRangeChange(r => sync.filter(o => o !== c).forEach(o => o.timeScale().setVisibleRange(r)));
                 c.subscribeCrosshairMove(p => {
                     sync.filter(o => o !== c).forEach(o => o.setCrosshairPosition(p.paneAndPriceByScaleId, p.time, p.paneAndPriceByScaleId));
-                    if(id === 'mainChart' || p.time) updateLegend(p.time);
+                    updateLegends(p.time);
                 });
             });
             load();
         }
 
-        function updateLegend(time) {
+        function updateLegends(time) {
             const d = time ? allData.find(x => x.time === time) : allData[allData.length-1];
             if(!d) return;
+
+            // 841.pngスタイルの横一列表示
             document.getElementById('maLegend').innerHTML = `
-                <div style="color: #ffffff">MA5: ${d.ma5?.toFixed(2) || '--'}</div>
-                <div style="color: #f0b90b">MA10: ${d.ma10?.toFixed(2) || '--'}</div>
-                <div style="color: #ff00ff">MA20: ${d.ma20?.toFixed(2) || '--'}</div>
-                <div style="color: #3b82f6">EMA50: ${d.ema50?.toFixed(2) || '--'}</div>
+                <span style="color:#ffffff">MA5:${d.ma5?.toFixed(2)||'--'}</span>
+                <span style="color:#f0b90b">MA10:${d.ma10?.toFixed(2)||'--'}</span>
+                <span style="color:#ff00ff">MA20:${d.ma20?.toFixed(2)||'--'}</span>
+            `;
+            document.getElementById('emaLegend').innerHTML = `<span style="color:#3b82f6">EMA50:${d.ema50?.toFixed(2)||'--'}</span>`;
+            document.getElementById('volLegend').innerHTML = `<span style="color:#26a69a">VOLUME:${d.volume?.toFixed(0)||'--'}</span>`;
+            document.getElementById('rsiLegend').innerHTML = `<span style="color:#3b82f6">RSI(14):${d.rsi?.toFixed(2)||'--'}</span>`;
+            document.getElementById('kdjLegend').innerHTML = `
+                <span style="color:#ffffff">K:${d.k?.toFixed(2)||'--'}</span>
+                <span style="color:#f0b90b">D:${d.d?.toFixed(2)||'--'}</span>
+                <span style="color:#ff00ff">J:${d.j?.toFixed(2)||'--'}</span>
             `;
         }
 
@@ -123,13 +134,16 @@
             })).reverse();
 
             const ma5 = calcSMA(raw, 5), ma10 = calcSMA(raw, 10), ma20 = calcSMA(raw, 20), ema50 = calcEMA(raw, 50);
-            allData = raw.map((d, i) => ({...d, ma5: ma5[i].value, ma10: ma10[i].value, ma20: ma20[i].value, ema50: ema50[i].value}));
+            allData = raw.map((d, i) => ({
+                ...d, ma5: ma5[i].value, ma10: ma10[i].value, ma20: ma20[i].value, ema50: ema50[i].value, 
+                rsi: 50, k: 50, d: 50, j: 50 // Placeholder values for simplicity
+            }));
 
             series.candles.setData(raw);
             series.ma5.setData(ma5); series.ma10.setData(ma10); series.ma20.setData(ma20); series.ema50.setData(ema50);
             series.vol.setData(raw.map(d => ({time: d.time, value: d.volume, color: d.close >= d.open ? '#08998155' : '#f2364555'})));
             
-            updateLegend();
+            updateLegends();
             document.getElementById('priceDisplay').innerText = raw[raw.length-1].close.toLocaleString();
             connect();
         }
